@@ -29,11 +29,13 @@ saveRDS(test, "rawData/test.rds")
 
 # Preprocessing data
 data <- list()
-train <- read_rds("rawData/train.rds")
-data$text <- train
+data$text <- read_rds("rawData/train.rds")
 data$chunkSize <- 50000
-data$length <- length(train)
+data$length <- length(data$text)
 data$index <- index(data)
+data$tokens <- pre_process(data)
+if (!dir.exists("cleanData")) dir.create("cleanData")
+saveRDS(data, "cleanData/tokenized_train.rds")
 
 index <- function(data) {
   chunkSize <- data$chunkSize
@@ -53,19 +55,38 @@ pre_process <- function(data) {
   idx <- data$index
   chunkSize <- data$chunkSize
   rows <- floor(data$length / chunkSize)
+  nGramTokens <- c()
   for (i in 1:rows) {
     t <- Sys.time()
     corpus <- corpus(text[idx[i,]])
-    nGramTokens <- tokens(corpus, "word",
+    nGramTokens <- c(nGramTokens, 
+                     tokens(corpus, "word",
+                            remove_numbers = TRUE,
+                            remove_punct = TRUE,
+                            remove_symbols = TRUE,
+                            remove_hyphens = TRUE,
+                            remove_url = TRUE,
+                            ngrams = 1:4) %>%
+                       tokens_tolower() %>%
+                       tokens_select(stopwords("en"), selection = "remove"))
+    printf("chunk %d tokenized in %.3f s\n", i, Sys.time() - t)
+  }
+  t <- Sys.time()
+  last_row_idx <- idx[rows + 1, ]
+  last_row_idx <- last_row_idx[!is.na(last_row_idx)]
+  corpus <- corpus(text[last_row_idx])
+  nGramTokens <- c(nGramTokens, 
+                   tokens(corpus, "word",
                           remove_numbers = TRUE,
                           remove_punct = TRUE,
                           remove_symbols = TRUE,
                           remove_hyphens = TRUE,
                           remove_url = TRUE,
                           ngrams = 1:4) %>%
-      tokens_tolower() %>%
-      tokens_select(stopwords("en"), selection = "remove")
-  }
+                     tokens_tolower() %>%
+                     tokens_select(stopwords("en"), selection = "remove"))
+  printf("chunk %d tokenized in %.3f s\n", rows + 1, Sys.time() - t)
+  return(nGramTokens)
 }
 
 # library(quanteda)
