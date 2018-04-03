@@ -33,12 +33,13 @@ data$text <- read_rds("rawData/train.rds")
 data$chunkSize <- 50000
 data$length <- length(data$text)
 data$index <- index(data)
-data$tokens <- pre_process(data)
+data$tokens <- pre_process(data, 4)
 if (!dir.exists("cleanData")) dir.create("cleanData")
 saveRDS(data, "cleanData/tokenized_train.rds")
+data <- read_rds("cleanData/tokenized_train.rds")
 
 index <- function(data) {
-  chunkSize <- data$chunkSize
+  # chunkSize <- data$chunkSize
   length <- data$length
   rows <- floor(length / chunkSize)
   idx_minus_last_row <- matrix(1:(chunkSize * rows), nrow = rows, ncol = chunkSize, byrow = TRUE)
@@ -50,50 +51,94 @@ index <- function(data) {
   return(rbind(idx_minus_last_row, idx_last_row))
 }
 
-pre_process <- function(data) {
+pre_process <- function(data, n) {
   text <- data$text
   idx <- data$index
   chunkSize <- data$chunkSize
   rows <- floor(data$length / chunkSize)
-  nGramTokens <- c()
+  ngram_tokens <- c()
   for (i in 1:rows) {
     t <- Sys.time()
     corpus <- corpus(text[idx[i,]])
-    nGramTokens <- c(nGramTokens, 
-                     tokens(corpus, "word",
-                            remove_numbers = TRUE,
-                            remove_punct = TRUE,
-                            remove_symbols = TRUE,
-                            remove_hyphens = TRUE,
-                            remove_url = TRUE,
-                            ngrams = 1:4) %>%
-                       tokens_tolower() %>%
-                       tokens_select(stopwords("en"), selection = "remove"))
+    ngram_tokens <- c(ngram_tokens, 
+                      tokens(corpus, "word",
+                             remove_numbers = TRUE,
+                             remove_punct = TRUE,
+                             remove_symbols = TRUE,
+                             remove_hyphens = TRUE,
+                             remove_url = TRUE,
+                             ngrams = n) %>%
+                        tokens_tolower() %>%
+                        tokens_select(stopwords("en"), selection = "remove"))
     printf("chunk %d tokenized in %.3f s\n", i, Sys.time() - t)
+    t <- system.time(dt <- build_ngram_model(ngram_tokens, n))
+    printf("model built with chunk %d in %.3f s\n\n", i, t[3])
+    
   }
   t <- Sys.time()
   last_row_idx <- idx[rows + 1, ]
   last_row_idx <- last_row_idx[!is.na(last_row_idx)]
   corpus <- corpus(text[last_row_idx])
-  nGramTokens <- c(nGramTokens, 
+  ngram_tokens <- c(ngram_tokens, 
                    tokens(corpus, "word",
                           remove_numbers = TRUE,
                           remove_punct = TRUE,
                           remove_symbols = TRUE,
                           remove_hyphens = TRUE,
                           remove_url = TRUE,
-                          ngrams = 1:4) %>%
+                          remove_twitter = TRUE,
+                          ngrams = n) %>%
                      tokens_tolower() %>%
                      tokens_select(stopwords("en"), selection = "remove"))
-  printf("chunk %d tokenized in %.3f s\n", rows + 1, Sys.time() - t)
-  return(nGramTokens)
+  ...
+}
+
+build_ngram_model <- function(ngram_tokens, n) {
+  dfm <- dfm(ngram_tokens)
+  feature_fre <- colSums(dfm)
+  dt <- data.table(ngram = names(featureFre), n = featureFre)
+  tmp <- str_split(dt$ngram, pattern = "_")
+  dt[, w1:= sapply(tmp, "[", 1)]
+  if (n == 2) {
+    dt[, w2:= sapply(tmp, "[", 2)]
+  } else if (n == 3) {
+    dt[, w2:= sapply(tmp, "[", 2)]
+    dt[, w3:= sapply(tmp, "[", 3)]
+  } else if (n == 4) {
+    dt[, w2:= sapply(tmp, "[", 2)]
+    dt[, w3:= sapply(tmp, "[", 3)]
+    dt[, w4:= sapply(tmp, "[", 4)]
+  }
+  return(dt)
+} 
+
+summarize_model <- function(dt, n) {
+  if (n == 4) {
+    dt <- dt[, .(w4, n, p = round(n/sum(n), 6)), by = .(w1, w2, w3)]
+  } else if (n == 3) {
+    dt <- dt[, .(w3, n, s = round(n/sum(n), 6)), by = .(w1, w2)]
+  } else if (n == 2) {
+    dt <- dt[, .(w2, n, s = round(n/sum(n), 6)), by = .(w1)]
+  } else {
+    dt <- dt[, .(w1, n, s = round(n/sum(n), 6))]
+  }
+  return(dt)
+}
+
+mergeChunks <- function(a, b) {
+  setkey(a, ngram);setkey(b, ngram)
+  a$n[a$ngram %in% b$ngram] <-  a$n[a$ngram %in% b$ngram] + b$n[b$ngram %in% a$ngram]
+  a <- rbindlist(list(a, b[!ngram %in% a$ngram]))
+  rm(b)
+  setkey(a,ngram)
+  a
 }
 
 # library(quanteda)
 # library(data.table)
 # library(R.utils)
 # corpus <- corpus(text)
-# nGramTokens <- tokens(corpus, "word",
+# ngram_tokens <- tokens(corpus, "word",
 #                       remove_numbers = TRUE, 
 #                       remove_punct = TRUE, 
 #                       remove_symbols = TRUE, 
@@ -102,7 +147,7 @@ pre_process <- function(data) {
 #                       ngrams = 1:4) %>% 
 #   tokens_tolower() %>% 
 #   tokens_select(stopwords("en"), selection = "remove")
-# dfm <- dfm(nGramTokens)
+# dfm <- dfm(ngram_tokens)
 # featureFre <- colSums(dfm)
 # 
 # input <- readline(prompt = "Please type input string: ")
