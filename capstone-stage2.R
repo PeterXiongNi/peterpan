@@ -33,7 +33,7 @@ data$text <- read_rds("rawData/train.rds")
 data$chunkSize <- 50000
 data$length <- length(data$text)
 data$index <- index(data)
-data$model <- build_ngram_model(data, 4)
+data$model <- build_ngram_model(data, 2)
 if (!dir.exists("cleanData")) dir.create("cleanData")
 saveRDS(data, "cleanData/tokenized_train.rds")
 data <- read_rds("cleanData/tokenized_train.rds")
@@ -79,17 +79,16 @@ build_ngram_model <- function(data, n) {
   last_row_idx <- idx[rows + 1, ]
   last_row_idx <- last_row_idx[!is.na(last_row_idx)]
   corpus <- corpus(text[last_row_idx])
-  ngram_tokens <- c(ngram_tokens, 
-                   tokens(corpus, "word",
-                          remove_numbers = TRUE,
-                          remove_punct = TRUE,
-                          remove_symbols = TRUE,
-                          remove_hyphens = TRUE,
-                          remove_url = TRUE,
-                          remove_twitter = TRUE,
-                          ngrams = n) %>%
-                     tokens_tolower() %>%
-                     tokens_select(stopwords("en"), selection = "remove"))
+  ngram_tokens <- tokens(corpus, "word",
+                        remove_numbers = TRUE,
+                        remove_punct = TRUE,
+                        remove_symbols = TRUE,
+                        remove_hyphens = TRUE,
+                        remove_url = TRUE,
+                        remove_twitter = TRUE,
+                        ngrams = n) %>%
+                   tokens_tolower() %>%
+                   tokens_select(stopwords("en"), selection = "remove")
   printf("chunk %d tokenized in %.3f s\n", rows + 1, Sys.time() - t)
   t <- system.time(chunk_model <- chunk_build_model(ngram_tokens, n))
   printf("chunk_model built with chunk %d in %.3f s\n", rows + 1, t[3])
@@ -206,6 +205,8 @@ merge_chunks <- function(a, b) {
 #   buildNGramModelonChunk(chunk)
 #   conbineResult()
 # }
+input <- "what is your"
+input <- str_split(input, " ")
 
 
 
