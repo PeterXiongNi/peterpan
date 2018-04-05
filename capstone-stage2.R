@@ -33,10 +33,17 @@ data$text <- read_rds("rawData/train.rds")
 data$chunkSize <- 50000
 data$length <- length(data$text)
 data$index <- index(data)
-data$model <- build_ngram_model(data, 2)
-if (!dir.exists("cleanData")) dir.create("cleanData")
-saveRDS(data, "cleanData/tokenized_train.rds")
-data <- read_rds("cleanData/tokenized_train.rds")
+model <- list()
+model$bi_gram <- build_ngram_model(data, 2)
+model$tri_gram <- build_ngram_model(data, 3)
+model$four_gram <- build_ngram_model(data, 4)
+saveRDS(model, "model.rds")
+
+input <- str_split("what is your", " ")
+w1 <- sapply(input, "[", 1)
+w2 <- sapply(input, "[", 2)
+w3 <- sapply(input, "[", 3)
+
 
 index <- function(data) {
   chunkSize <- data$chunkSize
@@ -132,81 +139,55 @@ chunk_build_model <- function(ngram_tokens, n) {
 
 summarize_model <- function(dt, n) {
   if (n == 4) {
-    dt <- dt[, .(w4, n, p = round(n/sum(n), 6)), by = .(w1, w2, w3)]
+    dt <- dt[, .(w4, n, p = round(n / sum(n), 6)), by = .(w1, w2, w3)]
+    dt <- dt[order(-n)]
+    dt[, n:=NULL]
+    setkey(dt, w1, w2, w3)
   } else if (n == 3) {
-    dt <- dt[, .(w3, n, s = round(n/sum(n), 6)), by = .(w1, w2)]
+    dt <- dt[, .(w3, n, p = round(n / sum(n), 6)), by = .(w1, w2)]
+    dt <- dt[order(-n)]
+    dt[, n:=NULL]
+    setkey(dt, w1, w2)
   } else if (n == 2) {
-    dt <- dt[, .(w2, n, s = round(n/sum(n), 6)), by = .(w1)]
+    dt <- dt[, .(w2, n, p = round(n / sum(n), 6)), by = .(w1)]
+    dt <- dt[order(-n)]
+    dt[, n:=NULL]
+    setkey(dt, w1)
   } else {
-    dt <- dt[, .(w1, n, s = round(n/sum(n), 6))]
+    dt <- dt[, .(w1, n, p = round(n / sum(n), 6))]
   }
   return(dt)
 }
 
 merge_chunks <- function(a, b) {
-  setkey(a, ngram);setkey(b, ngram)
+  setkey(a, ngram)
+  setkey(b, ngram)
   a$n[a$ngram %in% b$ngram] <-  a$n[a$ngram %in% b$ngram] + b$n[b$ngram %in% a$ngram]
   a <- rbindlist(list(a, b[!ngram %in% a$ngram]))
   rm(b)
-  setkey(a,ngram)
+  setkey(a, ngram)
   a
 }
 
-# library(quanteda)
-# library(data.table)
-# library(R.utils)
-# corpus <- corpus(text)
-# ngram_tokens <- tokens(corpus, "word",
-#                       remove_numbers = TRUE, 
-#                       remove_punct = TRUE, 
-#                       remove_symbols = TRUE, 
-#                       remove_hyphens = TRUE, 
-#                       remove_url = TRUE,
-#                       ngrams = 1:4) %>% 
-#   tokens_tolower() %>% 
-#   tokens_select(stopwords("en"), selection = "remove")
-# dfm <- dfm(ngram_tokens)
-# featureFre <- colSums(dfm)
-# 
-# input <- readline(prompt = "Please type input string: ")
-# preProcessInput <- function(input) {
-#   token <- input %>% 
-#     corpus() %>% 
-#     tokens("word",
-#            remove_numbers = TRUE, 
-#            remove_punct = TRUE, 
-#            remove_symbols = TRUE, 
-#            remove_hyphens = TRUE, 
-#            remove_url = TRUE) %>%
-#     tokens_tolower()
-#   length <- length(token$text1)
-#   gram <- ifelse(length > 3, 3, length)
-#   output <- as.numeric()
-#   for (i in gram:1) {
-#     nGramToken <- tokens_ngrams(token, i)
-#     output <- c(output, nGramToken$text1[length(nGramToken$text1)])
-#   }
-#   return(output)
-# }
-# processedInput <- preProcessInput(input)
-# prediction <- as.numeric()
-# for (i in 1:length(processedInput)) {
-#   pattern <- paste0("(^", processedInput[i], ")(_[a-z]+)$")
-#   index <- grep(pattern, names(featureFre))
-#   match <- sort(featureFre[index] / featureFre[processedInput[i]], decreasing = TRUE)[1:3]
-#   names(match) <- sub(paste0("^", processedInput[i], "_"), "", names(match))
-#   prediction <- c(prediction, match)
-# }
-# prediction
+predict <- function(model, w1, w2, w3) {
+  #search 4gram, full match
+  res <- model$four_gram[list(w1, w2, w3), .(w4, p)]
+  if(nrow(res) > 0 & res[1, p] > 0) {
+    return(res)
+  }
+  #backoff to 3 gramm model
+  res <- model$tri_gram[list(w2, w3), .(w4, p)]
+  if(nrow(res) > 0 & res[1, p] > 0) {
+    return(res)
+  }
+  #backoff to bigrams
+  res <- model$bi_gram[t3, .(w4, p)]
+  if(nrow(res) > 0 & res[1, p] > 0) {
+    return(res)
+  }
+  return (data.table(w4 = "the", p = 0))
+}
 
-
-# while(notFinished) {
-#   chunk <- readInChunk(files)
-#   buildNGramModelonChunk(chunk)
-#   conbineResult()
-# }
-input <- "what is your"
-input <- str_split(input, " ")
-
-
+test <- list()
+test$text <- read_rds("rawData/test.rds")
 
